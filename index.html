@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Folder Text Combiner</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .button-container {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 10px;
+            color: #666;
+        }
+        #output {
+            width: 100%;
+            height: 300px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            white-space: pre;
+            overflow: auto;
+            background-color: #f9f9f9;
+        }
+        .hidden {
+            display: none;
+        }
+        .file-info {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+        #unsupported {
+            color: #d9534f;
+            font-weight: bold;
+        }
+        /* Directory Tree Styles */
+        .directory-tree {
+            font-family: monospace;
+            margin: 15px 0;
+            font-size: 14px;
+            white-space: pre;
+            overflow: auto;
+            max-height: 300px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            line-height: 1.4;
+        }
+        .tree-toggle {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #4CAF50;
+            cursor: pointer;
+            display: inline-block;
+            user-select: none;
+        }
+        .tree-toggle:hover {
+            text-decoration: underline;
+        }
+        
+        /* Style for copy tree button to match other buttons */
+        #copyTreeBtn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        #copyTreeBtn:hover {
+            background-color: #45a049;
+        }
+        #copyTreeBtn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>CodeHarvester : All files in Folder to single Text file</h1>
+    <div class="container">
+        <div class="card">
+            <p>This tool recursively processes all text files in a selected folder and combines them into a single formatted output.</p>
+            <p id="unsupported" class="hidden">Your browser does not support the File System Access API required for this tool. Please use a modern browser like Chrome or Edge.</p>
+            
+            <div class="button-container">
+                <button id="selectFolder">Select Folder</button>
+                <button id="downloadBtn" disabled>Download Result</button>
+                <button id="copyBtn" disabled>Copy to Clipboard</button>
+            </div>
+            
+            <div id="status">No folder selected</div>
+            
+            <div class="file-info hidden" id="fileInfoContainer">
+                <span id="fileCount">0</span> files processed, 
+                <span id="totalSize">0</span> bytes
+            </div>
+        </div>
+        
+        <div class="card" id="treeContainer" style="display: none;">
+            <h3>Directory Tree:</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div class="tree-toggle" id="treeToggle">[Collapse Tree]</div>
+                <button id="copyTreeBtn">Copy Tree</button>
+            </div>
+            <div class="directory-tree" id="directoryTree">Select a folder to view tree structure...</div>
+        </div>
+        
+        <div class="card">
+            <h3>Output:</h3>
+            <div id="output">Select a folder to begin processing...</div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const selectFolderBtn = document.getElementById('selectFolder');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const copyBtn = document.getElementById('copyBtn');
+            const statusElement = document.getElementById('status');
+            const outputElement = document.getElementById('output');
+            const fileInfoContainer = document.getElementById('fileInfoContainer');
+            const fileCountElement = document.getElementById('fileCount');
+            const totalSizeElement = document.getElementById('totalSize');
+            const unsupportedElement = document.getElementById('unsupported');
+            const directoryTreeElement = document.getElementById('directoryTree');
+            const treeContainer = document.getElementById('treeContainer');
+            const treeToggle = document.getElementById('treeToggle');
+            
+            let combinedOutput = '';
+            let fileCount = 0;
+            let totalBytes = 0;
+            let directoryStructure = null;
+            let directoryTreeText = '';
+            
+            // Check if File System Access API is supported
+            if (!('showDirectoryPicker' in window)) {
+                selectFolderBtn.disabled = true;
+                unsupportedElement.classList.remove('hidden');
+            }
+            
+            // Toggle directory tree visibility
+            treeToggle.addEventListener('click', () => {
+                if (directoryTreeElement.style.display === 'none') {
+                    directoryTreeElement.style.display = 'block';
+                    treeToggle.textContent = '[Collapse Tree]';
+                } else {
+                    directoryTreeElement.style.display = 'none';
+                    treeToggle.textContent = '[Expand Tree]';
+                }
+            });
+            
+            // Copy tree button
+            const copyTreeBtn = document.getElementById('copyTreeBtn');
+            copyTreeBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(directoryTreeText);
+                    statusElement.textContent = 'Directory tree copied to clipboard!';
+                    setTimeout(() => {
+                        statusElement.textContent = 'Ready';
+                    }, 2000);
+                } catch (err) {
+                    console.error('Failed to copy tree:', err);
+                    statusElement.textContent = 'Failed to copy directory tree';
+                }
+            });
+            
+            selectFolderBtn.addEventListener('click', async () => {
+                try {
+                    // Reset previous data
+                    combinedOutput = '';
+                    fileCount = 0;
+                    totalBytes = 0;
+                    directoryStructure = { name: '', type: 'directory', children: [] };
+                    directoryTreeText = '';
+                    
+                    outputElement.textContent = 'Processing...';
+                    directoryTreeElement.textContent = 'Building directory tree...';
+                    statusElement.textContent = 'Reading folder...';
+                    downloadBtn.disabled = true;
+                    copyBtn.disabled = true;
+                    copyTreeBtn.disabled = true;
+                    fileInfoContainer.classList.add('hidden');
+                    treeContainer.style.display = 'none';
+                    
+                    // Show directory picker
+                    const directoryHandle = await window.showDirectoryPicker();
+                    
+                    statusElement.textContent = `Processing folder: ${directoryHandle.name}`;
+                    directoryStructure.name = directoryHandle.name;
+                    
+                    // Process the directory recursively
+                    await processDirectory(directoryHandle, '', directoryStructure);
+                    
+                    // Render directory tree
+                    renderDirectoryTree(directoryStructure);
+                    treeContainer.style.display = 'block';
+                    
+                    // Update UI
+                    outputElement.textContent = combinedOutput || 'No text files found in the selected folder.';
+                    statusElement.textContent = `Completed processing folder: ${directoryHandle.name}`;
+                    downloadBtn.disabled = false;
+                    copyBtn.disabled = false;
+                    fileInfoContainer.classList.remove('hidden');
+                    fileCountElement.textContent = fileCount;
+                    totalSizeElement.textContent = formatBytes(totalBytes);
+                    
+                } catch (error) {
+                    if (error.name !== 'AbortError') {
+                        console.error('Error processing folder:', error);
+                        statusElement.textContent = `Error: ${error.message || 'Unknown error occurred'}`;
+                        outputElement.textContent = 'An error occurred while processing the folder.';
+                        directoryTreeElement.textContent = 'Error building directory tree.';
+                    } else {
+                        statusElement.textContent = 'Folder selection canceled.';
+                        outputElement.textContent = 'Select a folder to begin processing...';
+                        treeContainer.style.display = 'none';
+                    }
+                }
+            });
+            
+            async function processDirectory(directoryHandle, path, currentNode) {
+                for await (const entry of directoryHandle.values()) {
+                    const entryPath = path ? `${path}/${entry.name}` : entry.name;
+                    
+                    if (entry.kind === 'directory') {
+                        // Add directory to tree structure
+                        const directoryNode = { 
+                            name: entry.name, 
+                            type: 'directory',
+                            children: []
+                        };
+                        currentNode.children.push(directoryNode);
+                        
+                        // Recursively process subdirectories
+                        const subDirectoryHandle = await directoryHandle.getDirectoryHandle(entry.name);
+                        await processDirectory(subDirectoryHandle, entryPath, directoryNode);
+                    } else if (entry.kind === 'file') {
+                        // Add file to tree structure
+                        currentNode.children.push({ 
+                            name: entry.name, 
+                            type: 'file',
+                            path: entryPath
+                        });
+                        
+                        // Process file
+                        try {
+                            const fileHandle = await directoryHandle.getFileHandle(entry.name);
+                            const file = await fileHandle.getFile();
+                            
+                            // Skip binary files or extremely large files
+                            if (shouldProcessFile(file)) {
+                                const content = await readFileContents(file);
+                                
+                                // Add to combined output
+                                combinedOutput += `<file path>\n// ${entryPath}\n<file content>\n${content}\n\n`;
+                                
+                                // Update stats
+                                fileCount++;
+                                totalBytes += file.size;
+                            }
+                        } catch (error) {
+                            console.warn(`Error processing file ${entryPath}:`, error);
+                        }
+                    }
+                }
+                
+                // Sort directories first, then files alphabetically
+                currentNode.children.sort((a, b) => {
+                    if (a.type === b.type) {
+                        return a.name.localeCompare(b.name);
+                    }
+                    return a.type === 'directory' ? -1 : 1;
+                });
+            }
+            
+            function renderDirectoryTree(node) {
+                let treeOutput = '';
+                
+                function buildTreeOutput(node, prefix = '', isLast = true) {
+                    // Add current node
+                    const nodePrefix = prefix + (isLast ? '└── ' : '├── ');
+                    const nodeIcon = node.type === 'directory' ? '📁 ' : '📄 ';
+                    treeOutput += nodePrefix + nodeIcon + node.name + '\n';
+                    
+                    // Add children
+                    if (node.children && node.children.length > 0) {
+                        const childPrefix = prefix + (isLast ? '    ' : '│   ');
+                        
+                        node.children.forEach((child, index) => {
+                            const isChildLast = index === node.children.length - 1;
+                            buildTreeOutput(child, childPrefix, isChildLast);
+                        });
+                    }
+                }
+                
+                // Start with root node
+                treeOutput = '.' + '\n';
+                node.children.forEach((child, index) => {
+                    const isChildLast = index === node.children.length - 1;
+                    buildTreeOutput(child, '', isChildLast);
+                });
+                
+                // Save for copying and set in the UI
+                directoryTreeText = treeOutput;
+                directoryTreeElement.textContent = treeOutput;
+                
+                // Enable the copy button if we have content
+                copyTreeBtn.disabled = !treeOutput;
+            }
+            
+            function shouldProcessFile(file) {
+                // Skip files larger than 10MB to prevent browser freezing
+                if (file.size > 10 * 1024 * 1024) {
+                    return false;
+                }
+                
+                // Check if the file is likely to be a text file based on MIME type or extension
+                const textMimeTypes = [
+                    'text/', 'application/json', 'application/xml', 'application/javascript',
+                    'application/typescript', 'application/x-httpd-php'
+                ];
+                
+                if (textMimeTypes.some(type => file.type.startsWith(type))) {
+                    return true;
+                }
+                
+                // Check common text file extensions if MIME type is not available
+                const textExtensions = [
+                    '.txt', '.md', '.js', '.ts', '.html', '.css', '.json', '.xml', '.yaml', '.yml',
+                    '.c', '.cpp', '.h', '.java', '.py', '.rb', '.php', '.sh', '.bat', '.ps1',
+                    '.config', '.conf', '.ini', '.properties', '.gradle', '.kt', '.swift', '.m',
+                    '.cs', '.vb', '.go', '.rs', '.dart', '.lua', '.pl', '.sql', '.r', '.jsx', '.tsx',
+                    '.vue', '.scala', '.groovy', '.sass', '.scss', '.less', '.coffee', '.gitignore',
+                    '.htaccess', '.env', '.toml', '.cmake', '.csv', '.pbxproj', '.sln', '.csproj',
+                    '.plist', '.svg', '.dockerfile', '.makefile', '.cmake', '.hpp', '.hxx', '.wasm'
+                ];
+                
+                return textExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+            }
+            
+            async function readFileContents(file) {
+                try {
+                    return await file.text();
+                } catch (error) {
+                    console.warn(`Error reading file ${file.name}:`, error);
+                    return `[Error reading file content: ${error.message}]`;
+                }
+            }
+            
+            // Download button
+            downloadBtn.addEventListener('click', () => {
+                const blob = new Blob([combinedOutput], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'combined_files.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+            
+            // Copy button
+            copyBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(combinedOutput);
+                    statusElement.textContent = 'Copied to clipboard!';
+                    setTimeout(() => {
+                        statusElement.textContent = 'Ready';
+                    }, 2000);
+                } catch (err) {
+                    console.error('Failed to copy:', err);
+                    statusElement.textContent = 'Failed to copy to clipboard';
+                }
+            });
+            
+            // Helper function to format bytes
+            function formatBytes(bytes, decimals = 2) {
+                if (bytes === 0) return '0 Bytes';
+                
+                const k = 1024;
+                const dm = decimals < 0 ? 0 : decimals;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+                
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+            }
+        });
+    </script>
+</body>
+</html>
