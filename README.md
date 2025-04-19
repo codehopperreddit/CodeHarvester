@@ -3,6 +3,8 @@
 
 Gathers code from throughout a folder structure into a single file and creates a directory tree
 
+Available on : https://codehopperreddit.github.io/CodeHarvester/
+
 ## Features :
 
 - Select any folder from your computer  
